@@ -1,0 +1,14 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+
+.env
+
+*.log
+*.db
+test-results.xml
+
+.vscode
+.idea

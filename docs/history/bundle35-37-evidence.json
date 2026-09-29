@@ -1,0 +1,37 @@
+{
+  "key": "bundle35-37-smoke-3f440d18bcf9409e9942f2c3cce0412e",
+  "first_request_id": 57,
+  "duplicate_request_id": 57,
+  "duplicate_rows_created": false,
+  "employee_approval_blocked": true,
+  "approver_approval_allowed": true,
+  "audit_actions": [
+    "REQUEST_CREATED",
+    "APPROVAL_REQUIRED",
+    "REQUEST_APPROVED"
+  ],
+  "iam_api_outage_health_status": 503,
+  "iam_api_outage_safe_tool_errors": true,
+  "database_outage_health_status": 503,
+  "database_outage_safe_tool_errors": true,
+  "docker_volume_persistence": true,
+  "mcp_recovered_without_restart": true,
+  "final_health": {
+    "status": "ok",
+    "service": "iam-mcp-server",
+    "database": "ok",
+    "iam_api": "ok"
+  },
+  "docker_image_build": "PASS",
+  "protocol": "2026-07-28",
+  "tests": {
+    "total": 71,
+    "passed": 71,
+    "failed": 0
+  },
+  "sqlite_sha256": "7646F79754B129282F69826FE5155838EFFBBB3103E0759163402FF799C89DB5",
+  "verified_at_utc": "2026-09-29T16:42:49.606101+00:00",
+  "remote_client": "PASS",
+  "client": "PASS",
+  "agent_gate_and_loop": "PASS (mocked model calls)"
+}

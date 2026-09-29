@@ -1,0 +1,143 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: iam-postgres
+    environment:
+      POSTGRES_DB: iam
+      POSTGRES_USER: iam_user
+      POSTGRES_PASSWORD: iam_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - iam_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iam_user -d iam"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: iam-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  iam-api:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mock-api}
+    command: ["uvicorn", "mock_services.iam_api:app", "--host", "0.0.0.0", "--port", "9000"]
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  hr-api:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mock-api}
+    command: ["uvicorn", "mock_services.hr_api:app", "--host", "0.0.0.0", "--port", "9100"]
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/health', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  itsm-api:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mock-api}
+    command: ["uvicorn", "mock_services.itsm_api:app", "--host", "0.0.0.0", "--port", "9201"]
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9201/health', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  iam-mcp:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mcp}
+    environment: &iam-environment
+      IAM_MCP_HOST: 0.0.0.0
+      IAM_MCP_PORT: 8001
+      DATABASE_URL: postgresql://iam_user:iam_password@postgres:5432/iam
+      REDIS_URL: redis://redis:6379/0
+      IAM_API_URL: http://iam-api:9000
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      iam-api: {condition: service_healthy}
+
+  iam-mcp-a:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mcp}
+    environment:
+      <<: *iam-environment
+      IAM_MCP_PORT: 8011
+      INSTANCE_ID: iam-a
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      iam-api: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/ready', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  iam-mcp-b:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mcp}
+    environment:
+      <<: *iam-environment
+      IAM_MCP_PORT: 8012
+      INSTANCE_ID: iam-b
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      iam-api: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8012/ready', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  hr-mcp:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mcp}
+    command: ["python", "-m", "app.hr.mcp_server"]
+    environment:
+      HR_MCP_HOST: 0.0.0.0
+      REDIS_URL: redis://redis:6379/0
+      HR_API_URL: http://hr-api:9100
+    depends_on:
+      redis: {condition: service_healthy}
+      hr-api: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/ready', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  itsm-mcp:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.mcp}
+    command: ["python", "-m", "app.itsm.mcp_server"]
+    environment:
+      ITSM_MCP_HOST: 0.0.0.0
+      REDIS_URL: redis://redis:6379/0
+      ITSM_API_URL: http://itsm-api:9201
+    depends_on:
+      redis: {condition: service_healthy}
+      itsm-api: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/ready', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  iam-lb:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.gateway}
+    command: ["python", "-m", "app.gateway.load_balancer"]
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      IAM_REPLICA_A_URL: http://iam-mcp-a:8011
+      IAM_REPLICA_B_URL: http://iam-mcp-b:8012
+    depends_on:
+      iam-mcp-a: {condition: service_healthy}
+      iam-mcp-b: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/ready', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+  gateway:
+    profiles: [full]
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.gateway}
+    ports: ["8080:8080"]
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      IAM_BACKEND_URL: http://iam-lb:8081
+      HR_BACKEND_URL: http://hr-mcp:8002
+      ITSM_BACKEND_URL: http://itsm-mcp:8003
+    depends_on:
+      iam-lb: {condition: service_healthy}
+      hr-mcp: {condition: service_healthy}
+      itsm-mcp: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=2)"], interval: 5s, timeout: 3s, retries: 10}
+
+volumes:
+  iam_postgres_data:
